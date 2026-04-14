@@ -60,3 +60,9 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Gemini CLI
+.gemini/
+
+# Workspace shared data (package configs, etc.)
+*.xcworkspace/xcshareddata/
