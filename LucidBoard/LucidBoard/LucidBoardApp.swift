@@ -9,9 +9,17 @@ import SwiftUI
 
 @main
 struct LucidBoardApp: App {
+    @StateObject private var boardVM = BoardViewModel(board: Board(
+        id: UUID(),
+        userId: UUID(),
+        title: "My First Board",
+        createdAt: Date(),
+        updatedAt: Date()
+    ))
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            BoardView(viewModel: boardVM)
         }
     }
 }
