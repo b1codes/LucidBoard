@@ -13,6 +13,16 @@ struct NoteView: View {
     var onDelete: () -> Void = {}
     var onBringToFront: () -> Void = {}
 
+    private var colorBinding: Binding<Color> {
+        Binding(
+            get: { Color(hex: viewModel.note.color) },
+            set: { newColor in
+                viewModel.note.color = UIColor(newColor).hexString
+                viewModel.syncNote()
+            }
+        )
+    }
+
     enum NoteMode {
         case text, drawing
     }
@@ -29,6 +39,9 @@ struct NoteView: View {
                         .foregroundStyle(mode == .drawing ? .primary : .secondary)
                 }
                 Spacer()
+                ColorPicker("", selection: colorBinding, supportsOpacity: false)
+                    .labelsHidden()
+                    .frame(width: 28, height: 28)
                 Image(systemName: "hand.tap")
                     .foregroundStyle(viewModel.isDragging ? .blue : .secondary)
                 Button(action: onDelete) {
@@ -87,7 +100,15 @@ struct NoteView: View {
     }
 }
 
-// Color Helper
+// Color Helpers
+extension UIColor {
+    var hexString: String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+    }
+}
+
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
