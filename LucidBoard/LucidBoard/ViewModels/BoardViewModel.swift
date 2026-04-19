@@ -10,6 +10,8 @@ import Combine
 import Supabase
 import Realtime
 
+private struct NoteIDRecord: Decodable { let id: UUID }
+
 class BoardViewModel: ObservableObject {
     @Published var board: Board
     @Published var noteViewModels: [UUID: NoteViewModel] = [:]
@@ -83,19 +85,23 @@ class BoardViewModel: ObservableObject {
                 print("Error decoding update note: \(error)")
             }
         case .delete(let action):
+            // oldRecord with default replica identity only contains PK columns,
+            // so decode just the id rather than a full Note to avoid failures.
             do {
-                let note: Note = try action.oldRecord.decode()
-                noteViewModels.removeValue(forKey: note.id)
+                let record: NoteIDRecord = try action.oldRecord.decode()
+                noteViewModels.removeValue(forKey: record.id)
             } catch {
-                print("Error decoding delete note: \(error)")
+                print("Error decoding delete note id: \(error)")
             }
         default:
             break
         }
     }
-    
+
     private func updateOrAddNote(_ note: Note) {
         if let existingVM = noteViewModels[note.id] {
+            // Don't interrupt a note that the local user is actively dragging.
+            guard !existingVM.isDragging else { return }
             if note.updatedAt > existingVM.note.updatedAt {
                 withAnimation(.spring()) {
                     existingVM.note = note
