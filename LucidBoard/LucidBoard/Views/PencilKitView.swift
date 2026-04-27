@@ -31,6 +31,11 @@ struct PencilKitView: UIViewRepresentable {
         if uiView.drawing != drawing {
             uiView.drawing = drawing
         }
+        
+        // Ensure contentSize matches the view's bounds to allow drawing over the full area
+        if uiView.contentSize != uiView.bounds.size {
+            uiView.contentSize = uiView.bounds.size
+        }
     }
     
     func makeCoordinator() -> Coordinator {

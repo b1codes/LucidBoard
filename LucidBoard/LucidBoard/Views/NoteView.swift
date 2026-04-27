@@ -70,8 +70,9 @@ struct NoteView: View {
                         .allowsHitTesting(mode == .drawing)
                 }
             }
-            .frame(width: 200, height: 200)
+            .frame(height: 200)
         }
+        .frame(width: 200)
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 12)
