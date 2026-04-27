@@ -50,21 +50,26 @@ class BoardViewModel: ObservableObject {
     
     @MainActor
     private func subscribeToRealtime() async {
-        let channel = supabase.client.channel("notes_board_\(board.id.uuidString)")
-        
-        let changes = channel.postgresChange(
-            AnyAction.self,
-            schema: "public",
-            table: "notes",
-            filter: "board_id=eq.\(board.id.uuidString)"
-        )
-        
-        await channel.subscribe()
-        
-        Task {
-            for await change in changes {
-                await handleRealtimeChange(change)
+        do {
+            let client = try supabase.client
+            let channel = client.channel("notes_board_\(board.id.uuidString)")
+            
+            let changes = channel.postgresChange(
+                AnyAction.self,
+                schema: "public",
+                table: "notes",
+                filter: "board_id=eq.\(board.id.uuidString)"
+            )
+            
+            await channel.subscribe()
+            
+            Task {
+                for await change in changes {
+                    await handleRealtimeChange(change)
+                }
             }
+        } catch {
+            print("Error subscribing to realtime: \(error)")
         }
     }
     

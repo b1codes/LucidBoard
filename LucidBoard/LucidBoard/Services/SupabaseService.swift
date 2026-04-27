@@ -8,19 +8,36 @@
 import Foundation
 import Supabase
 
+enum SupabaseError: Error {
+    case notConfigured
+}
+
 class SupabaseService {
     static let shared = SupabaseService()
     
-    let client: SupabaseClient
+    private let _client: SupabaseClient?
+    
+    var client: SupabaseClient {
+        get throws {
+            guard let client = _client else {
+                throw SupabaseError.notConfigured
+            }
+            return client
+        }
+    }
     
     private init() {
         let urlString = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String ?? ""
         let key = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_KEY") as? String ?? ""
         
-        client = SupabaseClient(
-            supabaseURL: URL(string: urlString)!,
-            supabaseKey: key
-        )
+        if let url = URL(string: urlString), !key.isEmpty {
+            _client = SupabaseClient(
+                supabaseURL: url,
+                supabaseKey: key
+            )
+        } else {
+            _client = nil
+        }
     }
     
     // Auth
