@@ -15,6 +15,11 @@ struct NoteView: View {
     var onDelete: () -> Void = {}
     var onBringToFront: () -> Void = {}
 
+    private var adaptiveOpacity: Double {
+        let baseColor = Color(hex: viewModel.note.color)
+        return baseColor.luminance > 0.5 ? 0.35 : 0.55
+    }
+
     private var colorBinding: Binding<Color> {
         Binding(
             get: { Color(hex: viewModel.note.color) },
@@ -97,9 +102,12 @@ struct NoteView: View {
         .frame(width: 200, height: 200)
         .padding(8)
         .background(
-            noteShape
-                .fill(Color(hex: viewModel.note.color).opacity(0.8))
-                .background(.ultraThinMaterial)
+            ZStack {
+                noteShape
+                    .fill(.ultraThinMaterial)
+                noteShape
+                    .fill(Color(hex: viewModel.note.color).opacity(adaptiveOpacity))
+            }
         )
         .clipShape(noteShape)
         .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
