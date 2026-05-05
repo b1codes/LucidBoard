@@ -110,7 +110,21 @@ struct NoteView: View {
             }
         )
         .clipShape(noteShape)
-        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+        .overlay(
+            noteShape
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            .white.opacity(adaptiveOpacity > 0.4 ? 0.3 : 0.1),
+                            .black.opacity(0.1)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
         .offset(
             x: CGFloat(viewModel.note.posX) + dragOffset.width,
             y: CGFloat(viewModel.note.posY) + dragOffset.height
@@ -139,15 +153,34 @@ struct NoteView: View {
         )
     }
     
-    private var noteShape: AnyShape {
+    private var noteShape: AnyInsettableShape {
         switch viewModel.note.template {
         case .circle:
-            return AnyShape(Circle())
+            return AnyInsettableShape(Circle())
         case .diamond:
-            return AnyShape(DiamondShape())
+            return AnyInsettableShape(DiamondShape())
         default:
-            return AnyShape(RoundedRectangle(cornerRadius: 12))
+            return AnyInsettableShape(RoundedRectangle(cornerRadius: 12))
         }
+    }
+}
+
+// Insettable Shape Eraser
+struct AnyInsettableShape: InsettableShape {
+    private var _path: (CGRect) -> Path
+    private var _inset: (CGFloat) -> AnyInsettableShape
+
+    init<S: InsettableShape>(_ shape: S) {
+        self._path = { rect in shape.path(in: rect) }
+        self._inset = { amount in AnyInsettableShape(shape.inset(by: amount)) }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        _path(rect)
+    }
+
+    func inset(by amount: CGFloat) -> AnyInsettableShape {
+        _inset(amount)
     }
 }
 
