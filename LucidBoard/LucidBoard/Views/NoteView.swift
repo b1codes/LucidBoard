@@ -182,4 +182,13 @@ extension Color {
         let uiColor = UIColor(self)
         return uiColor.hexString
     }
+
+    var luminance: Double {
+        let uiColor = UIColor(self)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        
+        // standard relative luminance formula
+        return 0.2126 * Double(r) + 0.7152 * Double(g) + 0.0722 * Double(b)
+    }
 }
