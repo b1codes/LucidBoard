@@ -103,14 +103,23 @@ struct ChecklistContentView: View {
 }
 
 // Shapes
-struct DiamondShape: Shape {
+struct DiamondShape: InsettableShape {
+    var insetAmount: CGFloat = 0
+
     func path(in rect: CGRect) -> Path {
+        let insetRect = rect.insetBy(dx: insetAmount, dy: insetAmount)
         var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minY, y: rect.midY))
+        path.move(to: CGPoint(x: insetRect.midX, y: insetRect.minY))
+        path.addLine(to: CGPoint(x: insetRect.maxX, y: insetRect.midY))
+        path.addLine(to: CGPoint(x: insetRect.midX, y: insetRect.maxY))
+        path.addLine(to: CGPoint(x: insetRect.minY, y: insetRect.midY))
         path.closeSubpath()
         return path
+    }
+
+    func inset(by amount: CGFloat) -> some InsettableShape {
+        var diamond = self
+        diamond.insetAmount += amount
+        return diamond
     }
 }
