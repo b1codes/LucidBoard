@@ -20,6 +20,12 @@ struct NoteView: View {
         return baseColor.luminance > 0.5 ? 0.35 : 0.55
     }
 
+    private var contentForegroundColor: Color {
+        let baseColor = Color(hex: viewModel.note.color)
+        // If note is dark, use white text. If note is light, use primary (which adapts to dark/light mode background)
+        return baseColor.luminance < 0.4 ? .white : .primary
+    }
+
     private var colorBinding: Binding<Color> {
         Binding(
             get: { Color(hex: viewModel.note.color) },
@@ -39,11 +45,11 @@ struct NoteView: View {
             HStack {
                 Button(action: { mode = .text }) {
                     Image(systemName: "text.alignleft")
-                        .foregroundStyle(mode == .text ? .primary : .secondary)
+                        .foregroundStyle(mode == .text ? contentForegroundColor : contentForegroundColor.opacity(0.8))
                 }
                 Button(action: { mode = .drawing }) {
                     Image(systemName: "pencil.tip")
-                        .foregroundStyle(mode == .drawing ? .primary : .secondary)
+                        .foregroundStyle(mode == .drawing ? contentForegroundColor : contentForegroundColor.opacity(0.8))
                 }
                 
                 Menu {
@@ -56,7 +62,7 @@ struct NoteView: View {
                     }
                 } label: {
                     Image(systemName: "doc.richtext.fill")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(contentForegroundColor.opacity(0.8))
                 }
                 
                 Spacer()
@@ -64,7 +70,7 @@ struct NoteView: View {
                     .labelsHidden()
                     .frame(width: 28, height: 28)
                 Image(systemName: "hand.tap")
-                    .foregroundStyle(viewModel.isDragging ? .blue : .secondary)
+                    .foregroundStyle(viewModel.isDragging ? .blue : contentForegroundColor.opacity(0.8))
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .foregroundStyle(.red.opacity(0.8))
@@ -75,7 +81,7 @@ struct NoteView: View {
             
             ZStack {
                 // Background Layer (Templates & Patterns)
-                NoteTemplateView(viewModel: viewModel, mode: mode)
+                NoteTemplateView(viewModel: viewModel, mode: mode, contentForegroundColor: contentForegroundColor)
                 
                 // Content Layer
                 if viewModel.note.template == .checklist && mode == .text {
@@ -90,7 +96,7 @@ struct NoteView: View {
                             }
                         ))
                         .font(.system(size: 14, weight: .medium, design: .default))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(contentForegroundColor)
                         .scrollContentBackground(.hidden)
                     } else {
                         PencilKitView(drawing: $viewModel.drawing)

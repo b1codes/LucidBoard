@@ -10,6 +10,7 @@ import SwiftUI
 struct NoteTemplateView: View {
     @ObservedObject var viewModel: NoteViewModel
     var mode: NoteView.NoteMode
+    var contentForegroundColor: Color
     
     var body: some View {
         ZStack {
@@ -20,7 +21,7 @@ struct NoteTemplateView: View {
             
             // Main Content
             if viewModel.note.template == .checklist && mode == .text {
-                ChecklistContentView(viewModel: viewModel)
+                ChecklistContentView(viewModel: viewModel, contentForegroundColor: contentForegroundColor)
             } else if viewModel.note.template == .checklist && mode == .drawing {
                 // Drawing mode checklist shows a large checkbox outline
                 HandwrittenChecklistBackground()
@@ -61,6 +62,7 @@ struct HandwrittenChecklistBackground: View {
 
 struct ChecklistContentView: View {
     @ObservedObject var viewModel: NoteViewModel
+    var contentForegroundColor: Color
     
     var body: some View {
         ScrollView {
@@ -69,7 +71,7 @@ struct ChecklistContentView: View {
                     HStack {
                         Button(action: { viewModel.toggleChecklistItem(id: item.id) }) {
                             Image(systemName: item.isCompleted ? "checkmark.square.fill" : "square")
-                                .foregroundColor(item.isCompleted ? .green : .secondary)
+                                .foregroundStyle(item.isCompleted ? .green : contentForegroundColor.opacity(0.7))
                         }
                         
                         TextField("Item", text: Binding(
@@ -77,11 +79,11 @@ struct ChecklistContentView: View {
                             set: { viewModel.updateChecklistItemText(id: item.id, text: $0) }
                         ))
                         .strikethrough(item.isCompleted)
-                        .foregroundColor(item.isCompleted ? .secondary : .primary)
+                        .foregroundStyle(item.isCompleted ? contentForegroundColor.opacity(0.5) : contentForegroundColor)
                         
                         Button(action: { viewModel.deleteChecklistItem(id: item.id) }) {
                             Image(systemName: "xmark.circle")
-                                .foregroundColor(.red.opacity(0.5))
+                                .foregroundStyle(.red.opacity(0.5))
                                 .font(.caption)
                         }
                     }
@@ -93,7 +95,7 @@ struct ChecklistContentView: View {
                         Text("Add Item")
                     }
                     .font(.caption)
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
                     .padding(.top, 4)
                 }
             }
