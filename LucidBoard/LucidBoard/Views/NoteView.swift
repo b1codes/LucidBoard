@@ -90,6 +90,7 @@ struct NoteView: View {
                             }
                         ))
                         .font(.system(size: 14, weight: .medium, design: .default))
+                        .foregroundStyle(.primary)
                         .scrollContentBackground(.hidden)
                     } else {
                         PencilKitView(drawing: $viewModel.drawing)
