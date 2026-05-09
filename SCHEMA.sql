@@ -27,7 +27,7 @@ CREATE TABLE notes (
     z_index INTEGER NOT NULL,
     template TEXT DEFAULT 'plain',
     checklist_items JSONB DEFAULT '[]'::jsonb,
-    embedding VECTOR(1536), -- Assuming OpenAI/Gemini embedding size
+    embedding VECTOR(768), -- Gemini text-embedding-004
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );

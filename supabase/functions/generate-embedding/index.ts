@@ -1,9 +1,13 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { GoogleGenerativeAI } from 'npm:@google/generative-ai'
 
-const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')!
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')!
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
+const model = genAI.getGenerativeModel({ model: 'text-embedding-004' })
 
 serve(async (req) => {
   try {
@@ -25,26 +29,9 @@ serve(async (req) => {
       return new Response('Content unchanged', { status: 200 })
     }
 
-    const embeddingRes = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: note.content_text.trim(),
-      }),
-    })
-
-    if (!embeddingRes.ok) {
-      const error = await embeddingRes.text()
-      console.error('OpenAI error:', error)
-      return new Response('Embedding generation failed', { status: 500 })
-    }
-
-    const { data } = await embeddingRes.json()
-    const embedding: number[] = data[0].embedding
+    // Generate embedding using Gemini
+    const result = await model.embedContent(note.content_text.trim())
+    const embedding = result.embedding.values
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
