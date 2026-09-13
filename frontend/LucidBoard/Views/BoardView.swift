@@ -225,7 +225,7 @@ struct BoardView: View {
 #Preview {
     BoardView(viewModel: BoardViewModel(board: Board(
         id: UUID(),
-        userId: UUID(),
+        userId: "",
         title: "Test Board",
         backgroundColor: "#FFFFFF",
         backgroundLayout: .grid,

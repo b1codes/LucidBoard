@@ -1,11 +1,15 @@
 import Foundation
 import Security
 
+/// Persists the Identity Platform session: the short-lived ID token sent as
+/// the bearer token, and the long-lived refresh token that mints new ones for
+/// the same account.
 protocol TokenStore: AnyObject {
     nonisolated var currentToken: String? { get }
-    nonisolated var currentUserId: UUID? { get }
+    nonisolated var currentRefreshToken: String? { get }
+    nonisolated var currentUserId: String? { get }
     nonisolated var isCurrentTokenExpired: Bool { get }
-    nonisolated func save(token: String, userId: UUID)
+    nonisolated func save(token: String, refreshToken: String, userId: String)
     nonisolated func clear()
 }
 
@@ -15,7 +19,9 @@ extension TokenStore {
         return Self.jwtIsExpired(token)
     }
 
-    static func jwtIsExpired(_ jwt: String) -> Bool {
+    /// True if the JWT's `exp` is within `leeway` seconds of now, so a token
+    /// is refreshed slightly early instead of expiring mid-request.
+    static func jwtIsExpired(_ jwt: String, leeway: TimeInterval = 60) -> Bool {
         let parts = jwt.split(separator: ".")
         guard parts.count >= 2 else { return true }
         var b64 = String(parts[1])
@@ -25,44 +31,47 @@ extension TokenStore {
         guard let data = Data(base64Encoded: b64),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let exp = json["exp"] as? Double else { return true }
-        return Date(timeIntervalSince1970: exp) <= Date()
+        return Date(timeIntervalSince1970: exp - leeway) <= Date()
     }
 }
 
 final class InMemoryTokenStore: TokenStore {
     nonisolated(unsafe) private(set) var currentToken: String?
-    nonisolated(unsafe) private(set) var currentUserId: UUID?
+    nonisolated(unsafe) private(set) var currentRefreshToken: String?
+    nonisolated(unsafe) private(set) var currentUserId: String?
 
-    nonisolated func save(token: String, userId: UUID) {
+    nonisolated func save(token: String, refreshToken: String, userId: String) {
         currentToken = token
+        currentRefreshToken = refreshToken
         currentUserId = userId
     }
 
     nonisolated func clear() {
         currentToken = nil
+        currentRefreshToken = nil
         currentUserId = nil
     }
 }
 
 final class KeychainTokenStore: TokenStore {
-    private let service = "com.lucidboard.api.token"
-    private let tokenAccount = "access_token"
+    private let service = "com.lucidboard.identity-platform"
+    private let tokenAccount = "id_token"
+    private let refreshTokenAccount = "refresh_token"
     private let userIdAccount = "user_id"
 
-    nonisolated var currentToken: String? { read(account: tokenAccount).flatMap { String(data: $0, encoding: .utf8) } }
-    nonisolated var currentUserId: UUID? {
-        read(account: userIdAccount)
-            .flatMap { String(data: $0, encoding: .utf8) }
-            .flatMap(UUID.init(uuidString:))
-    }
+    nonisolated var currentToken: String? { readString(account: tokenAccount) }
+    nonisolated var currentRefreshToken: String? { readString(account: refreshTokenAccount) }
+    nonisolated var currentUserId: String? { readString(account: userIdAccount) }
 
-    nonisolated func save(token: String, userId: UUID) {
+    nonisolated func save(token: String, refreshToken: String, userId: String) {
         write(account: tokenAccount, value: Data(token.utf8))
-        write(account: userIdAccount, value: Data(userId.uuidString.utf8))
+        write(account: refreshTokenAccount, value: Data(refreshToken.utf8))
+        write(account: userIdAccount, value: Data(userId.utf8))
     }
 
     nonisolated func clear() {
         delete(account: tokenAccount)
+        delete(account: refreshTokenAccount)
         delete(account: userIdAccount)
     }
 
@@ -78,16 +87,20 @@ final class KeychainTokenStore: TokenStore {
         delete(account: account)
         var query = baseQuery(account: account)
         query[kSecValueData as String] = value
+        // Readable in the background after first unlock, but never synced or
+        // restored onto another device — the refresh token is a credential.
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(query as CFDictionary, nil)
     }
 
-    nonisolated private func read(account: String) -> Data? {
+    nonisolated private func readString(account: String) -> String? {
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        return status == errSecSuccess ? item as? Data : nil
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     nonisolated private func delete(account: String) {

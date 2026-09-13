@@ -15,3 +15,10 @@ SUPABASE_KEY = your-anon-public-key
 // file; copy them into your own Config.xcconfig if you want to override.
 BACKEND_KIND = supabase
 LOCAL_API_URL = http://127.0.0.1:8000
+
+// Google Cloud Identity Platform (used by BACKEND_KIND = local). Leave
+// AUTH_EMULATOR_HOST set to talk to the Firebase Auth emulator (any API key
+// works there); clear it and set the iOS-restricted key from
+// `terraform output -raw ios_api_key` to use a real GCP project.
+IDENTITY_PLATFORM_API_KEY = fake-api-key
+AUTH_EMULATOR_HOST = 127.0.0.1:9099

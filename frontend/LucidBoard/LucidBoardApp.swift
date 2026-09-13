@@ -31,7 +31,7 @@ struct LucidBoardApp: App {
         self.appRepository = repo
         let initialBoard = Board(
             id: UUID(),
-            userId: UUID(),
+            userId: "",
             title: "My First Board",
             backgroundColor: "#FFFFFF",
             backgroundLayout: .grid,

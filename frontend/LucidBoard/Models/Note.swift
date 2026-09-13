@@ -30,7 +30,7 @@ struct ChecklistItem: Identifiable, Codable, Equatable {
 struct Note: Identifiable, Codable, Equatable {
     let id: UUID
     let boardId: UUID
-    let userId: UUID
+    let userId: String
     var contentText: String?
     var contentDrawing: Data?
     var color: String
