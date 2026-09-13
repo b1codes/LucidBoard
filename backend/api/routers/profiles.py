@@ -4,10 +4,10 @@ from django.http import HttpRequest
 from ninja import Router
 
 from api.schemas import ProfileOut, ProfileUpsertIn
-from core.auth import JWTBearer
+from core.auth import IdentityPlatformBearer
 from core.repository import get_profile, upsert_profile
 
-router = Router(auth=JWTBearer())
+router = Router(auth=IdentityPlatformBearer())
 
 
 @router.get("/profile", response=ProfileOut)

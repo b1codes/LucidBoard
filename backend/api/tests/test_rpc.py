@@ -2,7 +2,7 @@ import uuid
 
 from core.matching import match_notes
 from core.models import Note
-from core.repository import create_anonymous_user, create_board, upsert_note
+from core.repository import create_board, upsert_note
 
 
 def _fake_embedding(seed: float) -> list[float]:
@@ -46,8 +46,7 @@ def test_match_notes_returns_positions(auth_client):
         assert isinstance(item["new_y"], (int, float))
 
 
-def test_match_notes_rejects_other_users_board(auth_client):
-    other_user = create_anonymous_user()
+def test_match_notes_rejects_other_users_board(auth_client, other_user):
     other_board = create_board(other_user.id, title="theirs")
     res = auth_client.post(
         "/api/rpc/match_notes",
@@ -70,7 +69,7 @@ def test_match_notes_returns_empty_for_board_with_no_notes(auth_client):
 
 def test_match_notes_pure_function_clusters_similar_notes_together():
     board_id = uuid.uuid4()
-    user_id = uuid.uuid4()
+    user_id = "test-uid"
     # NOTE: _fake_embedding(seed) = [seed] * 768 always points in the same
     # direction regardless of seed, so any two such vectors are parallel and
     # have cosine distance exactly 0 (cosine distance, like pgvector's `<=>`,
@@ -95,7 +94,7 @@ def test_match_notes_pure_function_clusters_similar_notes_together():
 
 def test_match_notes_pure_function_handles_no_embeddings():
     board_id = uuid.uuid4()
-    user_id = uuid.uuid4()
+    user_id = "test-uid"
     n1 = Note(id=uuid.uuid4(), board_id=board_id, user_id=user_id, color="#fff",
                pos_x=0, pos_y=0, z_index=0, embedding=None)
     positions = match_notes([n1])
@@ -109,7 +108,7 @@ def test_match_notes_pure_function_handles_single_embedded_note():
     # a single isolated embedded note still gets its own singleton cluster
     # and a returned position.
     board_id = uuid.uuid4()
-    user_id = uuid.uuid4()
+    user_id = "test-uid"
     n1 = Note(id=uuid.uuid4(), board_id=board_id, user_id=user_id, color="#fff",
                pos_x=0, pos_y=0, z_index=0, embedding=_fake_embedding(0.1))
     positions = match_notes([n1])
