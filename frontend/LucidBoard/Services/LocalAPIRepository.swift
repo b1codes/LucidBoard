@@ -13,30 +13,6 @@ enum LocalAPIError: Error {
 
 // MARK: - Private response shapes
 
-private struct SignupResponse: Decodable {
-    let accessToken: String
-    let tokenType: String
-    let expiresIn: Int
-    let user: SignupUser
-
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case tokenType = "token_type"
-        case expiresIn = "expires_in"
-        case user
-    }
-}
-
-private struct SignupUser: Decodable {
-    let id: UUID
-    let isAnonymous: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case isAnonymous = "is_anonymous"
-    }
-}
-
 private struct APIError: Decodable {
     let detail: String?
     let code: String?
@@ -83,7 +59,7 @@ private struct MatchNotesPayload: Encodable {
 private struct NotePayload: Encodable {
     let id: UUID
     let boardId: UUID
-    let userId: UUID
+    let userId: String
     let contentText: String?
     let contentDrawing: String?  // base64-encoded
     let color: String
@@ -130,10 +106,29 @@ private struct NotePayload: Encodable {
 
 // MARK: - LocalAPIRepository
 
+/// Serializes session acquisition so concurrent callers that all find no
+/// usable token share one refresh/sign-up. Without this, parallel anonymous
+/// sign-ups at launch would each mint a different Identity Platform user.
+private actor SessionCoordinator {
+    private var inFlight: Task<Void, Error>?
+
+    func run(_ operation: @escaping @Sendable () async throws -> Void) async throws {
+        if let inFlight {
+            return try await inFlight.value
+        }
+        let task = Task { try await operation() }
+        inFlight = task
+        defer { inFlight = nil }
+        try await task.value
+    }
+}
+
 final class LocalAPIRepository: AppRepository {
     private let baseURL: String
+    private let identityPlatform: IdentityPlatformClient
     private let tokenStore: TokenStore
     private let session: URLSession
+    private let sessionCoordinator = SessionCoordinator()
 
     // Shared encoder/decoder with ISO 8601 dates.
     private let encoder: JSONEncoder = {
@@ -148,33 +143,61 @@ final class LocalAPIRepository: AppRepository {
         return d
     }()
 
-    init(baseURL: String, tokenStore: TokenStore, session: URLSession = .shared) {
+    init(
+        baseURL: String,
+        identityPlatform: IdentityPlatformClient,
+        tokenStore: TokenStore,
+        session: URLSession = .shared
+    ) {
         self.baseURL = baseURL
+        self.identityPlatform = identityPlatform
         self.tokenStore = tokenStore
         self.session = session
     }
 
+    /// Signed in means we hold a refresh token: an expired ID token is
+    /// renewed transparently on the next request.
     nonisolated var isSignedIn: Bool {
-        tokenStore.currentToken != nil && !tokenStore.isCurrentTokenExpired
+        tokenStore.currentRefreshToken != nil
     }
 
     // MARK: - Auth
 
+    /// Ensure an Identity Platform session exists. Like FirebaseAuth's
+    /// `signInAnonymously()`, this reuses the stored anonymous account rather
+    /// than minting a new one, so relaunching the app keeps the user's boards.
     nonisolated func signInAnonymously() async throws {
-        var req = try makeRequest(path: "/auth/v1/signup", query: "anonymous=true", method: "POST")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = Data()  // empty body — params are in query
+        try await ensureSession(forceRefresh: false)
+    }
 
-        let (data, response) = try await performRaw(req)
-        try checkStatus(response, data: data, isAuthEndpoint: true)
-
-        let signup: SignupResponse
-        do {
-            signup = try decoder.decode(SignupResponse.self, from: data)
-        } catch {
-            throw LocalAPIError.decoding(error)
+    /// Make the token store hold a usable ID token, preferring (in order) the
+    /// current token, a refresh of the stored account, and only then a brand
+    /// new anonymous account.
+    ///
+    /// - Parameter forceRefresh: the API rejected the current token, so don't
+    ///   trust its `exp` claim.
+    private nonisolated func ensureSession(forceRefresh: Bool) async throws {
+        try await sessionCoordinator.run { [self] in
+            if !forceRefresh, tokenStore.currentRefreshToken != nil, !tokenStore.isCurrentTokenExpired {
+                return
+            }
+            if let refreshToken = tokenStore.currentRefreshToken {
+                do {
+                    store(try await identityPlatform.refresh(refreshToken: refreshToken))
+                    return
+                } catch let error as IdentityPlatformError where error.isRefreshTokenDead {
+                    // That identity is gone for good. Every other failure
+                    // (offline, 5xx, misconfigured API key) propagates instead:
+                    // signing up anew would orphan the user's boards.
+                    tokenStore.clear()
+                }
+            }
+            store(try await identityPlatform.signUpAnonymously())
         }
-        tokenStore.save(token: signup.accessToken, userId: signup.user.id)
+    }
+
+    private nonisolated func store(_ session: AuthSession) {
+        tokenStore.save(token: session.idToken, refreshToken: session.refreshToken, userId: session.userId)
     }
 
     // MARK: - Boards
@@ -263,23 +286,21 @@ final class LocalAPIRepository: AppRepository {
 
     // MARK: - Private helpers
 
-    /// Build a URLRequest for the given path, optional query string, and HTTP method.
-    private nonisolated func makeRequest(path: String, query: String? = nil, method: String) throws -> URLRequest {
-        var urlStr = baseURL + path
-        if let query { urlStr += "?" + query }
-        guard let url = URL(string: urlStr) else {
+    /// Build an authenticated URLRequest for the given API path and method.
+    private nonisolated func makeRequest(path: String, method: String, body: Data?) throws -> URLRequest {
+        guard let url = URL(string: baseURL + path) else {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
         req.httpMethod = method
-        return req
-    }
-
-    /// Attach the Bearer token header if a valid token exists.
-    private nonisolated func attachAuth(_ req: inout URLRequest) {
+        if let body {
+            req.httpBody = body
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         if let token = tokenStore.currentToken {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        return req
     }
 
     /// Low-level send: wraps URLError into LocalAPIError.network.
@@ -295,43 +316,25 @@ final class LocalAPIRepository: AppRepository {
         }
     }
 
-    /// High-level send: adds auth header, maps status codes, retries on 401.
+    /// High-level send: refreshes an expiring token up front, maps status
+    /// codes, and on a 401 force-refreshes the session and retries once.
     private nonisolated func perform(path: String, method: String, body: Data? = nil) async throws -> Data {
-        var req = try makeRequest(path: path, method: method)
-        if let body {
-            req.httpBody = body
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        attachAuth(&req)
+        try await ensureSession(forceRefresh: false)
+        let (data, response) = try await performRaw(makeRequest(path: path, method: method, body: body))
 
-        let (data, response) = try await performRaw(req)
-
-        // Retry-on-401: only for non-auth endpoints, only once.
         if response.statusCode == 401 {
-            let isAuthEndpoint = path.hasPrefix("/auth/")
-            if !isAuthEndpoint {
-                // Re-sign-in silently.
-                try await signInAnonymously()
-                // Rebuild request with fresh token.
-                var retryReq = try makeRequest(path: path, method: method)
-                if let body {
-                    retryReq.httpBody = body
-                    retryReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                }
-                attachAuth(&retryReq)
-                let (retryData, retryResponse) = try await performRaw(retryReq)
-                try checkStatus(retryResponse, data: retryData, isAuthEndpoint: false)
-                return retryData
-            }
-            try checkStatus(response, data: data, isAuthEndpoint: true)
+            try await ensureSession(forceRefresh: true)
+            let (retryData, retryResponse) = try await performRaw(makeRequest(path: path, method: method, body: body))
+            try checkStatus(retryResponse, data: retryData)
+            return retryData
         }
 
-        try checkStatus(response, data: data, isAuthEndpoint: path.hasPrefix("/auth/"))
+        try checkStatus(response, data: data)
         return data
     }
 
     /// Map HTTP status to LocalAPIError (throws); otherwise returns normally.
-    private nonisolated func checkStatus(_ response: HTTPURLResponse, data: Data, isAuthEndpoint: Bool) throws {
+    private nonisolated func checkStatus(_ response: HTTPURLResponse, data: Data) throws {
         switch response.statusCode {
         case 200...299:
             return

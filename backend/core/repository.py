@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from google.api_core.exceptions import AlreadyExists
+
 from core.firestore_client import get_client
 from core.models import Board, Note, Profile, User
 
@@ -18,19 +20,7 @@ def _now() -> datetime:
 
 # --- Users ---
 
-def create_anonymous_user() -> User:
-    user = User(id=uuid.uuid4(), is_anonymous_user=True, created_at=_now())
-    get_client().collection(USERS).document(str(user.id)).set(
-        {"is_anonymous_user": user.is_anonymous_user, "created_at": user.created_at}
-    )
-    return user
-
-
-def get_user(user_id: uuid.UUID) -> User | None:
-    snap = get_client().collection(USERS).document(str(user_id)).get()
-    if not snap.exists:
-        return None
-    data = snap.to_dict()
+def _user_from_doc(user_id: str, data: dict) -> User:
     return User(
         id=user_id,
         is_anonymous_user=data["is_anonymous_user"],
@@ -38,19 +28,46 @@ def get_user(user_id: uuid.UUID) -> User | None:
     )
 
 
+def get_user(user_id: str) -> User | None:
+    snap = get_client().collection(USERS).document(user_id).get()
+    if not snap.exists:
+        return None
+    return _user_from_doc(user_id, snap.to_dict())
+
+
+def get_or_create_user(user_id: str, is_anonymous: bool) -> User:
+    """Return the user doc for an Identity Platform UID, creating it on first sight.
+
+    Identity Platform owns account creation; this collection only records
+    app-side metadata, so it's populated lazily from verified ID tokens.
+    """
+    existing = get_user(user_id)
+    if existing is not None:
+        return existing
+    user = User(id=user_id, is_anonymous_user=is_anonymous, created_at=_now())
+    try:
+        get_client().collection(USERS).document(user_id).create(
+            {"is_anonymous_user": user.is_anonymous_user, "created_at": user.created_at}
+        )
+    except AlreadyExists:
+        # A concurrent first request for the same UID won the race.
+        return get_user(user_id)
+    return user
+
+
 # --- Profiles ---
 
-def get_profile(user_id: uuid.UUID) -> Profile | None:
-    snap = get_client().collection(PROFILES).document(str(user_id)).get()
+def get_profile(user_id: str) -> Profile | None:
+    snap = get_client().collection(PROFILES).document(user_id).get()
     if not snap.exists:
         return None
     data = snap.to_dict()
     return Profile(user_id=user_id, settings=data.get("settings", {}), updated_at=data.get("updated_at"))
 
 
-def upsert_profile(user_id: uuid.UUID, settings: dict) -> Profile:
+def upsert_profile(user_id: str, settings: dict) -> Profile:
     now = _now()
-    get_client().collection(PROFILES).document(str(user_id)).set(
+    get_client().collection(PROFILES).document(user_id).set(
         {"settings": settings, "updated_at": now}
     )
     return Profile(user_id=user_id, settings=settings, updated_at=now)
@@ -61,7 +78,7 @@ def upsert_profile(user_id: uuid.UUID, settings: dict) -> Profile:
 def _board_from_doc(doc_id: str, data: dict) -> Board:
     return Board(
         id=uuid.UUID(doc_id),
-        user_id=uuid.UUID(data["user_id"]),
+        user_id=data["user_id"],
         title=data["title"],
         background_color=data["background_color"],
         background_layout=data["background_layout"],
@@ -70,11 +87,11 @@ def _board_from_doc(doc_id: str, data: dict) -> Board:
     )
 
 
-def list_boards_for_user(user_id: uuid.UUID) -> list[Board]:
+def list_boards_for_user(user_id: str) -> list[Board]:
     query = (
         get_client()
         .collection(BOARDS)
-        .where("user_id", "==", str(user_id))
+        .where("user_id", "==", user_id)
         .order_by("updated_at", direction="DESCENDING")
     )
     return [_board_from_doc(doc.id, doc.to_dict()) for doc in query.stream()]
@@ -87,14 +104,14 @@ def get_board(board_id: uuid.UUID) -> Board | None:
     return _board_from_doc(snap.id, snap.to_dict())
 
 
-def create_board(user_id: uuid.UUID, title: str = "Untitled") -> Board:
+def create_board(user_id: str, title: str = "Untitled") -> Board:
     now = _now()
     board = Board(
         id=uuid.uuid4(), user_id=user_id, title=title, created_at=now, updated_at=now
     )
     get_client().collection(BOARDS).document(str(board.id)).set(
         {
-            "user_id": str(board.user_id),
+            "user_id": board.user_id,
             "title": board.title,
             "background_color": board.background_color,
             "background_layout": board.background_layout,
@@ -117,7 +134,7 @@ def _note_from_doc(doc_id: str, data: dict) -> Note:
     return Note(
         id=uuid.UUID(doc_id),
         board_id=uuid.UUID(data["board_id"]),
-        user_id=uuid.UUID(data["user_id"]),
+        user_id=data["user_id"],
         content_text=data.get("content_text"),
         content_drawing=data.get("content_drawing"),
         color=data["color"],
@@ -154,7 +171,7 @@ def upsert_note(note_id: uuid.UUID, **fields) -> Note:
     now = _now()
     data = {
         "board_id": str(fields["board_id"]),
-        "user_id": str(fields["user_id"]),
+        "user_id": fields["user_id"],
         "content_text": fields.get("content_text"),
         "content_drawing": fields.get("content_drawing"),
         "color": fields["color"],

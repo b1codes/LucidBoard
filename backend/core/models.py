@@ -7,7 +7,7 @@ from uuid import UUID
 
 @dataclass
 class User:
-    id: UUID
+    id: str  # Identity Platform UID
     is_anonymous_user: bool = True
     created_at: datetime | None = None
 
@@ -22,7 +22,7 @@ class User:
 
 @dataclass
 class Profile:
-    user_id: UUID
+    user_id: str
     settings: dict = field(default_factory=dict)
     updated_at: datetime | None = None
 
@@ -30,7 +30,7 @@ class Profile:
 @dataclass
 class Board:
     id: UUID
-    user_id: UUID
+    user_id: str
     title: str = "Untitled"
     background_color: str = "#FFFFFF"
     background_layout: str = "grid"
@@ -42,7 +42,7 @@ class Board:
 class Note:
     id: UUID
     board_id: UUID
-    user_id: UUID
+    user_id: str
     content_text: str | None = None
     content_drawing: bytes | None = None
     color: str = "#FFFFFF"

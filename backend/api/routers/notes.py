@@ -7,12 +7,12 @@ from django.http import Http404, HttpRequest
 from ninja import Router
 
 from api.schemas import NoteOut, NoteUpsertIn
-from core.auth import JWTBearer
+from core.auth import IdentityPlatformBearer
 from core.embeddings import generate_embedding
 from core.models import Note
 from core.repository import delete_note, get_board, get_note, list_notes_for_board, upsert_note
 
-router = Router(auth=JWTBearer())
+router = Router(auth=IdentityPlatformBearer())
 
 
 def _decode_drawing(b64: str | None) -> bytes | None:

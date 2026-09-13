@@ -6,10 +6,10 @@ from django.http import Http404, HttpRequest
 from ninja import Router
 
 from api.schemas import BoardOut, BoardUpdateIn
-from core.auth import JWTBearer
+from core.auth import IdentityPlatformBearer
 from core.repository import get_board, list_boards_for_user, update_board
 
-router = Router(auth=JWTBearer())
+router = Router(auth=IdentityPlatformBearer())
 
 
 @router.get("/boards", response=list[BoardOut])

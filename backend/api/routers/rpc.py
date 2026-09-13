@@ -4,11 +4,11 @@ from django.http import Http404, HttpRequest
 from ninja import Router
 
 from api.schemas import MatchNoteResult, MatchNotesIn
-from core.auth import JWTBearer
+from core.auth import IdentityPlatformBearer
 from core.matching import match_notes
 from core.repository import get_board, list_notes_for_board
 
-router = Router(auth=JWTBearer())
+router = Router(auth=IdentityPlatformBearer())
 
 
 @router.post("/rpc/match_notes", response=list[MatchNoteResult])

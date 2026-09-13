@@ -1,9 +1,8 @@
-from core.repository import create_anonymous_user, create_board, get_board
+from core.repository import create_board, get_board
 
 
-def test_list_boards_returns_only_users_boards(auth_client):
+def test_list_boards_returns_only_users_boards(auth_client, other_user):
     create_board(auth_client.user.id, title="Mine")
-    other_user = create_anonymous_user()
     create_board(other_user.id, title="Theirs")
     res = auth_client.get("/api/boards")
     assert res.status_code == 200
@@ -30,8 +29,7 @@ def test_update_board(auth_client):
     assert updated.background_color == "#000"
 
 
-def test_update_other_users_board_returns_404(auth_client):
-    other_user = create_anonymous_user()
+def test_update_other_users_board_returns_404(auth_client, other_user):
     other = create_board(other_user.id, title="Theirs")
     res = auth_client.patch(
         f"/api/boards/{other.id}",

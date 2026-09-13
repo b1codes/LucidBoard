@@ -17,7 +17,7 @@ enum BackgroundLayout: String, Codable, CaseIterable {
 
 struct Board: Identifiable, Codable {
     let id: UUID
-    let userId: UUID
+    let userId: String
     var title: String
     var backgroundColor: String
     var backgroundLayout: BackgroundLayout

@@ -1,57 +1,84 @@
-from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+import os
+import subprocess
+import sys
 
 import jwt
 import pytest
-from django.conf import settings
+from firebase_admin import auth as firebase_auth
 
-from core.auth import decode_token, mint_anonymous_token
+from api.conftest import sign_up_anonymous
+from core.auth import verify_id_token
 from core.repository import get_user
 
 
-def test_mint_anonymous_token_creates_user():
-    user, token = mint_anonymous_token()
-    assert get_user(user.id) is not None
+def _resign(token: str, **claim_overrides) -> str:
+    """Re-encode an emulator ID token with some claims replaced.
+
+    Emulator tokens are unsigned (alg "none"), so this produces a token the
+    emulator-mode verifier would accept if it didn't check the claim itself.
+    """
+    payload = jwt.decode(token, options={"verify_signature": False})
+    payload.update(claim_overrides)
+    return jwt.encode(payload, key=None, algorithm="none")
+
+
+def test_verify_id_token_creates_user_on_first_sight():
+    token = sign_up_anonymous()
+    uid = jwt.decode(token, options={"verify_signature": False})["sub"]
+    assert get_user(uid) is None
+
+    user = verify_id_token(token)
+
+    assert user.id == uid
     assert user.is_anonymous_user is True
+    assert get_user(uid) is not None
 
 
-def test_mint_anonymous_token_has_correct_claims():
-    user, token = mint_anonymous_token()
-    payload = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"], audience="authenticated")
-    assert payload["sub"] == str(user.id)
-    assert payload["role"] == "authenticated"
-    assert payload["aud"] == "authenticated"
-    assert payload["is_anonymous"] is True
-    assert payload["exp"] - payload["iat"] == settings.JWT_EXPIRY_SECONDS
+def test_verify_id_token_returns_existing_user_on_repeat():
+    token = sign_up_anonymous()
+    first = verify_id_token(token)
+    second = verify_id_token(token)
+    assert second.id == first.id
+    assert second.created_at == first.created_at
 
 
-def test_decode_token_returns_user_for_valid_token():
-    user, token = mint_anonymous_token()
-    decoded_user = decode_token(token)
-    assert decoded_user.id == user.id
-
-
-def test_decode_token_raises_on_invalid_signature():
-    user, _ = mint_anonymous_token()
-    bad_token = jwt.encode(
-        {"sub": str(user.id), "aud": "authenticated", "exp": 9999999999, "iat": 0,
-         "role": "authenticated", "is_anonymous": True},
-        "wrong-secret",
-        algorithm="HS256",
+def test_verify_id_token_rejects_token_for_other_project():
+    token = _resign(
+        sign_up_anonymous(),
+        aud="some-other-project",
+        iss="https://securetoken.google.com/some-other-project",
     )
-    with pytest.raises(jwt.InvalidSignatureError):
-        decode_token(bad_token)
+    with pytest.raises(firebase_auth.InvalidIdTokenError):
+        verify_id_token(token)
 
 
-def test_decode_token_raises_on_expired_token():
-    expired_payload = {
-        "sub": str(uuid4()),
-        "aud": "authenticated",
-        "iat": int((datetime.now(tz=timezone.utc) - timedelta(hours=2)).timestamp()),
-        "exp": int((datetime.now(tz=timezone.utc) - timedelta(hours=1)).timestamp()),
-        "role": "authenticated",
-        "is_anonymous": True,
+def test_verify_id_token_rejects_wrong_issuer():
+    token = _resign(sign_up_anonymous(), iss="https://evil.example.com/demo-lucidboard")
+    with pytest.raises(firebase_auth.InvalidIdTokenError):
+        verify_id_token(token)
+
+
+def test_verify_id_token_rejects_garbage():
+    with pytest.raises(firebase_auth.InvalidIdTokenError):
+        verify_id_token("not.a.jwt")
+
+
+def test_verify_id_token_rejects_empty_token():
+    with pytest.raises(ValueError):
+        verify_id_token("")
+
+
+def test_settings_refuse_auth_emulator_with_real_project():
+    env = {
+        **os.environ,
+        "FIREBASE_AUTH_EMULATOR_HOST": "127.0.0.1:9099",
+        "IDENTITY_PLATFORM_PROJECT_ID": "lucidboard-prod",
     }
-    expired_token = jwt.encode(expired_payload, settings.JWT_SECRET, algorithm="HS256")
-    with pytest.raises(jwt.ExpiredSignatureError):
-        decode_token(expired_token)
+    result = subprocess.run(
+        [sys.executable, "-c", "import lucidboard_api.settings"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "ImproperlyConfigured" in result.stderr

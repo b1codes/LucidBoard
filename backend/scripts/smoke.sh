@@ -9,10 +9,14 @@ BASE="${BASE:-http://127.0.0.1:8000}"
 # is installed; the system python3 doesn't have it.
 PY="${PY:-uv run python}"
 
-echo "==> signup"
-TOKEN=$(curl -sf -X POST "$BASE/auth/v1/signup?anonymous=true" | $PY -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+AUTH_HOST="${FIREBASE_AUTH_EMULATOR_HOST:-127.0.0.1:9099}"
+
+echo "==> anonymous sign-up against the Identity Platform (Auth) emulator"
+SIGNUP=$(curl -sf -X POST -H "Content-Type: application/json" -d '{"returnSecureToken":true}' \
+  "http://$AUTH_HOST/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key")
+TOKEN=$(echo "$SIGNUP" | $PY -c 'import sys,json;print(json.load(sys.stdin)["idToken"])')
+USER_ID=$(echo "$SIGNUP" | $PY -c 'import sys,json;print(json.load(sys.stdin)["localId"])')
 AUTH="Authorization: Bearer $TOKEN"
-USER_ID=$($PY -c 'import sys,json,base64;tok=sys.argv[1].split(".")[1];tok+="="*((4-len(tok)%4)%4);print(json.loads(base64.urlsafe_b64decode(tok))["sub"])' "$TOKEN")
 
 echo "==> seed board directly in the Firestore emulator (boards are normally created by the Swift app)"
 BOARD_ID=$($PY - "$USER_ID" <<'EOF'

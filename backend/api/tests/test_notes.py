@@ -1,7 +1,9 @@
 import uuid
 from unittest.mock import patch
 
-from core.repository import create_anonymous_user, create_board, get_note
+import pytest
+
+from core.repository import create_board, get_note
 
 
 def _note_payload(board_id, **overrides):
@@ -20,8 +22,8 @@ def _note_payload(board_id, **overrides):
     return base
 
 
-def _make_other_board():
-    other_user = create_anonymous_user()
+@pytest.fixture
+def other_board(other_user):
     return create_board(other_user.id, title="theirs")
 
 
@@ -38,8 +40,7 @@ def test_list_notes_for_board(auth_client):
     assert len(res.json()) == 1
 
 
-def test_list_notes_for_other_users_board_returns_404(auth_client):
-    other_board = _make_other_board()
+def test_list_notes_for_other_users_board_returns_404(auth_client, other_board):
     res = auth_client.get(f"/api/boards/{other_board.id}/notes")
     assert res.status_code == 404
 
@@ -107,8 +108,7 @@ def test_upsert_skips_embedding_when_content_unchanged(auth_client):
     assert note.color == "#000"
 
 
-def test_upsert_on_other_users_board_returns_404(auth_client):
-    other_board = _make_other_board()
+def test_upsert_on_other_users_board_returns_404(auth_client, other_board):
     note_id = uuid.uuid4()
     with patch("api.routers.notes.generate_embedding", return_value=None):
         res = auth_client.put(
@@ -133,8 +133,7 @@ def test_delete_note(auth_client):
     assert get_note(note_id) is None
 
 
-def test_delete_other_users_note_returns_404(auth_client):
-    other_board = _make_other_board()
+def test_delete_other_users_note_returns_404(auth_client, other_board):
     other_note_id = uuid.uuid4()
     with patch("api.routers.notes.generate_embedding", return_value=None):
         # PUT as the other user directly via the repository (bypassing auth)

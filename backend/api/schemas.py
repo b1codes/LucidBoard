@@ -12,25 +12,11 @@ class ChecklistItemSchema(Schema):
     is_completed: bool = False
 
 
-# --- Auth ---
-
-class AuthUserOut(Schema):
-    id: UUID
-    is_anonymous: bool
-
-
-class AuthResponse(Schema):
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    user: AuthUserOut
-
-
 # --- Boards ---
 
 class BoardOut(Schema):
     id: UUID
-    user_id: UUID
+    user_id: str  # Identity Platform UID
     title: str
     background_color: str
     background_layout: str
@@ -49,7 +35,7 @@ class BoardUpdateIn(Schema):
 class NoteOut(Schema):
     id: UUID
     board_id: UUID
-    user_id: UUID
+    user_id: str  # Identity Platform UID
     content_text: str | None
     content_drawing: str | None  # base64
     color: str

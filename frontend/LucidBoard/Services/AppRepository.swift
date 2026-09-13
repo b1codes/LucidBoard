@@ -45,11 +45,16 @@ enum AppRepositoryFactory {
     static func make(
         backendKind: String,
         localAPIBaseURL: String,
+        identityPlatform: IdentityPlatformConfig,
         tokenStore: TokenStore
     ) -> AppRepository {
         switch backendKind {
         case "local":
-            return LocalAPIRepository(baseURL: localAPIBaseURL, tokenStore: tokenStore)
+            return LocalAPIRepository(
+                baseURL: localAPIBaseURL,
+                identityPlatform: IdentityPlatformClient(config: identityPlatform),
+                tokenStore: tokenStore
+            )
         default:
             return SupabaseRepository()
         }
@@ -57,18 +62,40 @@ enum AppRepositoryFactory {
 
     /// Pick a repository based on build configuration and overrides.
     ///
-    /// Priority order:
-    ///   1. `LUCIDBOARD_BACKEND_KIND` environment variable (useful for tests and scheme overrides)
-    ///   2. `BACKEND_KIND` / `LOCAL_API_URL` keys in `Info.plist` if present
-    ///   3. Compile-time default: `local` in Debug builds, `supabase` in Release
+    /// Each setting resolves in this priority order:
+    ///   1. `LUCIDBOARD_*` environment variable (useful for tests and scheme overrides)
+    ///   2. The matching key in `Info.plist`, if present
+    ///   3. Compile-time default (Debug targets the local backend + Firebase Emulator Suite)
+    ///
+    /// | Setting | Env var | Info.plist key | Debug default |
+    /// |---|---|---|---|
+    /// | backend | `LUCIDBOARD_BACKEND_KIND` | `BACKEND_KIND` | `local` |
+    /// | API URL | `LUCIDBOARD_LOCAL_API_URL` | `LOCAL_API_URL` | `http://127.0.0.1:8000` |
+    /// | API key | `LUCIDBOARD_IDENTITY_PLATFORM_API_KEY` | `IDENTITY_PLATFORM_API_KEY` | `fake-api-key` |
+    /// | Auth emulator | `LUCIDBOARD_AUTH_EMULATOR_HOST` | `AUTH_EMULATOR_HOST` | `127.0.0.1:9099` |
+    ///
+    /// An empty auth emulator host means "use real Identity Platform".
     static func makeFromBundle() -> AppRepository {
-        let envKind = ProcessInfo.processInfo.environment["LUCIDBOARD_BACKEND_KIND"]
-        let plistKind = Bundle.main.object(forInfoDictionaryKey: "BACKEND_KIND") as? String
-        let backendKind = envKind ?? plistKind ?? defaultBackendKind
-        let envURL = ProcessInfo.processInfo.environment["LUCIDBOARD_LOCAL_API_URL"]
-        let plistURL = Bundle.main.object(forInfoDictionaryKey: "LOCAL_API_URL") as? String
-        let baseURL = envURL ?? plistURL ?? "http://127.0.0.1:8000"
-        return make(backendKind: backendKind, localAPIBaseURL: baseURL, tokenStore: KeychainTokenStore())
+        let backendKind = setting(env: "LUCIDBOARD_BACKEND_KIND", plist: "BACKEND_KIND") ?? defaultBackendKind
+        let baseURL = setting(env: "LUCIDBOARD_LOCAL_API_URL", plist: "LOCAL_API_URL") ?? "http://127.0.0.1:8000"
+        let apiKey = setting(env: "LUCIDBOARD_IDENTITY_PLATFORM_API_KEY", plist: "IDENTITY_PLATFORM_API_KEY")
+            ?? defaultIdentityPlatformAPIKey
+        let emulatorHost = setting(env: "LUCIDBOARD_AUTH_EMULATOR_HOST", plist: "AUTH_EMULATOR_HOST")
+            ?? defaultAuthEmulatorHost
+        return make(
+            backendKind: backendKind,
+            localAPIBaseURL: baseURL,
+            identityPlatform: IdentityPlatformConfig(
+                apiKey: apiKey,
+                emulatorHost: emulatorHost.isEmpty ? nil : emulatorHost
+            ),
+            tokenStore: KeychainTokenStore()
+        )
+    }
+
+    private static func setting(env: String, plist: String) -> String? {
+        ProcessInfo.processInfo.environment[env]
+            ?? Bundle.main.object(forInfoDictionaryKey: plist) as? String
     }
 
     private static var defaultBackendKind: String {
@@ -76,6 +103,22 @@ enum AppRepositoryFactory {
         return "local"
         #else
         return "supabase"
+        #endif
+    }
+
+    private static var defaultIdentityPlatformAPIKey: String {
+        #if DEBUG
+        return "fake-api-key"  // the Auth emulator accepts any key
+        #else
+        return ""
+        #endif
+    }
+
+    private static var defaultAuthEmulatorHost: String {
+        #if DEBUG
+        return "127.0.0.1:9099"
+        #else
+        return ""
         #endif
     }
 }
